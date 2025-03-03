@@ -15,17 +15,13 @@ from wordcloud import WordCloud
 import io
 import base64
 
-# Download necessary NLP models
 nltk.download("stopwords")
 nlp = spacy.load("en_core_web_sm")
 
-# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Google News Trends API with Visuals")
-
-# Pydantic models for response
 class Article(BaseModel):
     title: str
     link: str
@@ -37,9 +33,8 @@ class NewsResponse(BaseModel):
     feed_title: str
     articles: List[Article]
     trending_keywords: List[str]
-    wordcloud: Optional[str]  # Base64 encoded image
+    wordcloud: Optional[str] 
 
-# Define valid language and country options
 LANGUAGES = ["en", "hi", "es", "fr", "uk", "ja"]
 COUNTRIES = ["WORLD", "US", "IN", "GB", "MX", "UA", "JP"]
 
@@ -60,7 +55,6 @@ def generate_wordcloud(keywords: List[str]) -> str:
     """Generate a word cloud and return base64 string"""
     wordcloud = WordCloud(width=400, height=200, background_color="white").generate(" ".join(keywords))
     
-    # Save to BytesIO object
     img_io = io.BytesIO()
     plt.figure(figsize=(5, 2))
     plt.imshow(wordcloud, interpolation="bilinear")
@@ -68,7 +62,6 @@ def generate_wordcloud(keywords: List[str]) -> str:
     plt.savefig(img_io, format="png", bbox_inches="tight")
     plt.close()
     
-    # Encode image to base64
     img_base64 = base64.b64encode(img_io.getvalue()).decode()
     return f"data:image/png;base64,{img_base64}"
 
