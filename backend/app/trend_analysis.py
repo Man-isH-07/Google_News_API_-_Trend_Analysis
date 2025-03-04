@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict
+from typing import List, Optional
 from fastapi import FastAPI, Query, HTTPException
 from pydantic import BaseModel
 from pygooglenews import GoogleNews
@@ -6,22 +6,31 @@ import logging
 import nltk
 import spacy
 import yake
+import re
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
-from collections import Counter
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend before importing pyplot
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import io
 import base64
 
+# Download necessary NLTK data
 nltk.download("stopwords")
+nltk.download("punkt")
+
+# Load SpaCy model
 nlp = spacy.load("en_core_web_sm")
 
+# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Google News Trends API with Visuals")
+
+# Define response models
 class Article(BaseModel):
     title: str
     link: str
@@ -38,19 +47,27 @@ class NewsResponse(BaseModel):
 LANGUAGES = ["en", "hi", "es", "fr", "uk", "ja"]
 COUNTRIES = ["WORLD", "US", "IN", "GB", "MX", "UA", "JP"]
 
+# Function to extract keywords
 def extract_keywords(text: str, num_keywords=10) -> List[str]:
-    """Extract keywords using YAKE"""
+    """Extracts keywords using YAKE"""
     kw_extractor = yake.KeywordExtractor(n=1, top=num_keywords)
     keywords = kw_extractor.extract_keywords(text)
     return [kw[0] for kw in keywords]
 
+# Function to generate a clean one-liner summary
 def generate_summary(text: str) -> str:
-    """Generate a one-liner summary using LSA"""
-    parser = PlaintextParser.from_string(text, Tokenizer("english"))
-    summarizer = LsaSummarizer()
-    summary = summarizer(parser.document, 1)  # 1 sentence summary
-    return str(summary[0]) if summary else "No summary available."
+    """Generate a clean one-liner summary from the article"""
+    if not text:
+        return "No summary available."
 
+    # Remove HTML tags if any
+    text = re.sub(r'<.*?>', '', text)
+
+    # Split into sentences & return the first one
+    sentences = re.split(r'(?<=[.!?]) +', text)  # Splits by ". ", "! ", or "? "
+    return sentences[0] if sentences else "No summary available."
+
+# Function to generate word cloud
 def generate_wordcloud(keywords: List[str]) -> str:
     """Generate a word cloud and return base64 string"""
     wordcloud = WordCloud(width=400, height=200, background_color="white").generate(" ".join(keywords))
@@ -93,7 +110,7 @@ def fetch_trends(
                 link=entry["link"],
                 published=entry["published"],
                 source=entry["source"]["title"],
-                summary=generate_summary(entry.get("summary", entry["title"]))  # Summarize if available
+                summary=generate_summary(entry.get("summary", entry["title"]))  # Clean one-liner summary
             ) for entry in articles_data
         ]
         
@@ -127,3 +144,44 @@ def trend_analysis():
         logger.error(f"Error fetching trend analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating trend analysis: {str(e)}")
 
+from fastapi.responses import Response
+from collections import Counter
+
+@app.get("/trending_chart")
+def run_trending_chart():
+    """Generates a bar chart of trending keywords"""
+    try:
+        # Fetch trending news headlines
+        gn = GoogleNews(lang="en", country="US")
+        news_feed = gn.top_news()
+
+        # Extract keywords from news headlines
+        all_text = " ".join(entry["title"] for entry in news_feed["entries"])
+        keywords = extract_keywords(all_text, num_keywords=10)
+
+        # Count keyword frequencies
+        keyword_counts = Counter(keywords)
+
+        # Prepare data for plotting
+        labels, values = zip(*keyword_counts.items())
+
+        # Generate bar chart
+        plt.figure(figsize=(10, 5))
+        plt.barh(labels, values, color="skyblue")
+        plt.xlabel("Frequency")
+        plt.ylabel("Trending Keywords")
+        plt.title("Trending News Keywords")
+        plt.gca().invert_yaxis()  # Invert for better readability
+
+        # Save image to a bytes buffer
+        img_io = io.BytesIO()
+        plt.savefig(img_io, format="png", bbox_inches="tight")
+        plt.close()
+
+        # Return image as response
+        img_io.seek(0)
+        return Response(content=img_io.getvalue(), media_type="image/png")
+
+    except Exception as e:
+        logger.error(f"Error generating trending chart: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error generating trending chart")
