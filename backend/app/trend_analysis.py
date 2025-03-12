@@ -11,26 +11,22 @@ from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 import matplotlib
-matplotlib.use('Agg')  # Use non-GUI backend before importing pyplot
+matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import io
 import base64
 
-# Download necessary NLTK data
 nltk.download("stopwords")
 nltk.download("punkt")
 
-# Load SpaCy model
 nlp = spacy.load("en_core_web_sm")
 
-# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Google News Trends API with Visuals")
 
-# Define response models
 class Article(BaseModel):
     title: str
     link: str
@@ -47,27 +43,21 @@ class NewsResponse(BaseModel):
 LANGUAGES = ["en", "hi", "es", "fr", "uk", "ja"]
 COUNTRIES = ["WORLD", "US", "IN", "GB", "MX", "UA", "JP"]
 
-# Function to extract keywords
 def extract_keywords(text: str, num_keywords=10) -> List[str]:
     """Extracts keywords using YAKE"""
     kw_extractor = yake.KeywordExtractor(n=1, top=num_keywords)
     keywords = kw_extractor.extract_keywords(text)
     return [kw[0] for kw in keywords]
 
-# Function to generate a clean one-liner summary
 def generate_summary(text: str) -> str:
     """Generate a clean one-liner summary from the article"""
     if not text:
         return "No summary available."
 
-    # Remove HTML tags if any
     text = re.sub(r'<.*?>', '', text)
-
-    # Split into sentences & return the first one
     sentences = re.split(r'(?<=[.!?]) +', text)  # Splits by ". ", "! ", or "? "
     return sentences[0] if sentences else "No summary available."
 
-# Function to generate word cloud
 def generate_wordcloud(keywords: List[str]) -> str:
     """Generate a word cloud and return base64 string"""
     wordcloud = WordCloud(width=400, height=200, background_color="white").generate(" ".join(keywords))
@@ -82,10 +72,16 @@ def generate_wordcloud(keywords: List[str]) -> str:
     img_base64 = base64.b64encode(img_io.getvalue()).decode()
     return f"data:image/png;base64,{img_base64}"
 
+
+
+@app.get("/")
+def read_root():
+    return {"Hello": "Trend_Analysis"}
+
 @app.get("/fetch_trends", response_model=NewsResponse)
 def fetch_trends(
-    lang: Optional[str] = Query(None, description="Language code (e.g., 'en', 'hi')"),
-    country: Optional[str] = Query(None, description="Country code (e.g., 'US', 'IN', 'WORLD')"),
+    lang: Optional[str] = Query(default="en", description="Language code (e.g., 'en', 'hi')"),
+    country: Optional[str] = Query(default="WORLD", description="Country code (e.g., 'US', 'IN', 'WORLD')"),
     limit: int = Query(10, ge=1, le=50, description="Number of articles to return")
 ):
     """Fetches trending news with keyword analysis and visualization"""
@@ -151,34 +147,27 @@ from collections import Counter
 def run_trending_chart():
     """Generates a bar chart of trending keywords"""
     try:
-        # Fetch trending news headlines
         gn = GoogleNews(lang="en", country="US")
         news_feed = gn.top_news()
 
-        # Extract keywords from news headlines
         all_text = " ".join(entry["title"] for entry in news_feed["entries"])
         keywords = extract_keywords(all_text, num_keywords=10)
 
-        # Count keyword frequencies
         keyword_counts = Counter(keywords)
 
-        # Prepare data for plotting
         labels, values = zip(*keyword_counts.items())
 
-        # Generate bar chart
         plt.figure(figsize=(10, 5))
         plt.barh(labels, values, color="skyblue")
         plt.xlabel("Frequency")
         plt.ylabel("Trending Keywords")
         plt.title("Trending News Keywords")
-        plt.gca().invert_yaxis()  # Invert for better readability
+        plt.gca().invert_yaxis()  
 
-        # Save image to a bytes buffer
         img_io = io.BytesIO()
         plt.savefig(img_io, format="png", bbox_inches="tight")
         plt.close()
 
-        # Return image as response
         img_io.seek(0)
         return Response(content=img_io.getvalue(), media_type="image/png")
 
